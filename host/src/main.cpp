@@ -157,7 +157,11 @@ int main(int argc, char* argv[])
         cData.devnum = 0;
 	setup_gpu_for_docking(cData);
 #else
+#ifdef USE_HIP
+	setup_gpu_for_docking(cData, tData);
+#else
 	setup_gpu_for_docking(cData, tData, mypars);
+#endif	
 #endif
 #endif
 

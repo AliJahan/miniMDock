@@ -46,8 +46,8 @@ HOST_SRC=$(wildcard $(HOST_SRC_DIR)/*.cpp)
 SRC=$(HOST_SRC)
 
 CXXFLAGS= $(hipconfig -C)
-IFLAGS=-I$(COMMON_DIR) -I$(HOST_INC_DIR) -I$(GPU_INCLUDE_PATH) -I$(HIP_PATH) -D__HIP_PLATFORM_HCC__  -I$(KRNL_DIR)
-LFLAGS=-L$(GPU_LIBRARY_PATH) -Wl,-rpath=$(GPU_LIBRARY_PATH):$(CPU_LIBRARY_PATH)
+IFLAGS=-I$(COMMON_DIR) -I$(HOST_INC_DIR) -I$(GPU_INCLUDE_PATH) -I$(HIP_PATH) -I/usr/include/ -I/usr/local/include/ -D__HIP_PLATFORM_HCC__  -I$(KRNL_DIR)
+LFLAGS=-L$(GPU_LIBRARY_PATH) -Wl,-rpath=$(GPU_LIBRARY_PATH):$(CPU_LIBRARY_PATH) -L/usr/local/lib/ -L/lib/x86_64-linux-gnu/ -lzmq 
 CFLAGS=-std=c++11 $(IFLAGS) $(LFLAGS)
 
 TARGET := autodock_hip
@@ -168,7 +168,7 @@ CFLAGS+=-DVERSION=\"$(GIT_VERSION)\"
 # ------------------------------------------------------
 
 kernels: $(KERNEL_SRC)
-	$(HIPCC) $(NWI) $(HIP_FLAGS) $(IFLAGS) $(HIP_INCLUDES) -c $(KRNL_DIR)/kernels.cpp
+	$(HIPCC) $(NWI) $(HIP_FLAGS) $(IFLAGS) $(HIP_INCLUDES) -fPIE -c $(KRNL_DIR)/kernels.cpp
 
 odock: check-env-all kernels $(SRC)
 	$(CPP) \
@@ -176,7 +176,7 @@ odock: check-env-all kernels $(SRC)
 	$(CFLAGS) \
 	$(LIB_HIP) \
 	-o$(BIN_DIR)/$(TARGET) \
-	$(DEV) $(NWI) $(OPT) $(DD) $(KFLAGS)
+	$(DEV) -DUSE_HIP -fPIE $(NWI) $(OPT) $(DD) $(KFLAGS)
 
 clean:
 	rm -f $(BIN_DIR)/* initpop.txt $(HOST_INC_DIR)/performdocking.h $(HOST_SRC_DIR)/performdocking.cpp

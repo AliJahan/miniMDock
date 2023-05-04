@@ -76,6 +76,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #define OPT_PROG INC KNWI REP KGDB
 
 #include <vector>
+#include <iostream>
+#include <zmq.h>
+#include <zmq_addon.hpp>
 
 #include "autostop.hpp"
 #include "performdocking.h"
@@ -334,8 +337,6 @@ filled with clock() */
 {
     auto const t1 = std::chrono::steady_clock::now();
     hipError_t status;
-
-
 	Liganddata myligand_reference;
 
 	float* cpu_init_populations;
@@ -737,114 +738,162 @@ filled with clock() */
 	}
 #endif
 	curr_progress_cnt = 0;
-
+	zmq::context_t m_ctx(1);
+  	zmq::socket_t* m_socket_ptr;
+  	m_socket_ptr =  new zmq::socket_t(m_ctx, zmq::socket_type::sub);
+	std::string id(std::to_string(cData.devnum+1));
+	// std::string id("power");
+	zmq_setsockopt(*m_socket_ptr, ZMQ_SUBSCRIBE, id.c_str(), id.size());
+	uint32_t msg_to_keep = 2;
+	zmq_setsockopt(*m_socket_ptr, ZMQ_CONFLATE, &msg_to_keep, sizeof(uint32_t));
+	m_socket_ptr->connect("tcp://localhost:5952");
 	// -------- Replacing with memory maps! ------------
-	while ((progress = check_progress(tData.pMem_gpu_evals_of_runs, generation_cnt, mypars->num_of_energy_evals, mypars->num_of_generations, mypars->num_of_runs, total_evals)) < 100.0)
-	// -------- Replacing with memory maps! ------------
-	{
-		if (mypars->autostop) {
-                        if (generation_cnt % mypars->as_frequency == 0) {
-                		status = hipMemcpy(sim_state.cpu_energies.data(), pMem_energies_current, size_energies, hipMemcpyDeviceToHost);
-		                RTERROR(status, "hipMemcpy: couldn't downloaded pMem_energies_current");
-                                if (autostop.check_if_satisfactory(generation_cnt, sim_state.cpu_energies.data(), total_evals))
-                                        break; // Exit loop
-                        }
+	const std::chrono::milliseconds timeout{100};
+	zmq::pollitem_t items[] = {
+      //  Always poll for worker activity 
+      { *m_socket_ptr, 0, ZMQ_POLLIN, 0 }
+    };
+	bool paused = true;
+	bool stopped = false;
+	while(true){
+		zmq::poll(&items[0], 1, timeout);
+		if (items[0].revents & ZMQ_POLLIN) {
+			zmq::message_t topic; // unique client ID
+			zmq::message_t msg; // unique client ID
+			zmq::recv_result_t rcv_result = m_socket_ptr->recv(topic,  zmq::recv_flags::none);
+			assert(rcv_result && "server: get from scheduler (batcher_id) rcv failed");
+			rcv_result = m_socket_ptr->recv(msg,  zmq::recv_flags::none);
+			assert(rcv_result && "server: get from scheduler (batcher_id) rcv failed");
+			// std::cout << std::string(topic.data<char>(), topic.size()) << " " << std::string(msg.data<char>(), msg.size())  << std::endl << std::flush;
+			std::string command(msg.data<char>(), msg.size());
+			
+			if(command == "pause"){
+				paused = true;
+			}
+			else if(command == "resume"){
+				paused = false;
+			}
+			else if(command == "stop"){
+				stopped = true;
+			}
+			else{
+				std::cout << "Worker #" << cData.devnum << ": received bad command: " << command << std::endl;
+			}
 		}
-		else
+		if(stopped){
+			break;
+		}
+		while (!paused)
 		{
-#ifdef DOCK_DEBUG
-			ite_cnt++;
-			printf("\nLGA iteration # %u\n", ite_cnt);
-			fflush(stdout);
-#endif
-			//update progress bar (bar length is 50)
-			new_progress_cnt = (int) (progress/2.0+0.5);
-			if (new_progress_cnt > 50)
-				new_progress_cnt = 50;
-			while (curr_progress_cnt < new_progress_cnt) {
-				curr_progress_cnt++;
-#ifndef DOCK_DEBUG
-				printf("*");
-#endif
+		//(progress = check_progress(tData.pMem_gpu_evals_of_runs, generation_cnt, mypars->num_of_energy_evals, mypars->num_of_generations, mypars->num_of_runs, total_evals)) < 100.0)
+		// -------- Replacing with memory maps! ------------
+		
+			std::cout << "gen count: " << generation_cnt << std::endl << std::flush;
+			if (mypars->autostop) {
+							if (generation_cnt % mypars->as_frequency == 0) {
+							status = hipMemcpy(sim_state.cpu_energies.data(), pMem_energies_current, size_energies, hipMemcpyDeviceToHost);
+							RTERROR(status, "hipMemcpy: couldn't downloaded pMem_energies_current");
+									// if (autostop.check_if_satisfactory(generation_cnt, sim_state.cpu_energies.data(), total_evals))
+									//         break; // Exit loop
+							}
+			}
+			else
+			{
+	#ifdef DOCK_DEBUG
+				ite_cnt++;
+				printf("\nLGA iteration # %u\n", ite_cnt);
 				fflush(stdout);
+	#endif
+				//update progress bar (bar length is 50)
+				new_progress_cnt = (int) (progress/2.0+0.5);
+				if (new_progress_cnt > 50)
+					new_progress_cnt = 50;
+				while (curr_progress_cnt < new_progress_cnt) {
+					curr_progress_cnt++;
+	#ifndef DOCK_DEBUG
+					printf("*");
+	#endif
+					fflush(stdout);
+				}
 			}
-		}
-		// Kernel4
-		#ifdef DOCK_DEBUG
-			printf("%-25s", "\tK_GA_GENERATION");fflush(stdout);
-		#endif
-        
-		//runKernel1D(command_queue,kernel4,kernel4_gxsize,kernel4_lxsize,&time_start_kernel,&time_end_kernel);
-        gpu_gen_and_eval_newpops(kernel4_gxsize, kernel4_lxsize, pMem_conformations_current, pMem_energies_current, pMem_conformations_next, pMem_energies_next);
-		#ifdef DOCK_DEBUG
-			printf("%15s", " ... Finished\n");fflush(stdout);
-		#endif
-		// End of Kernel4
-		if (cData.dockpars.lsearch_rate != 0.0f) {
-			if (strcmp(mypars->ls_method, "sw")  == 0 ) {
-				// Kernel3
-				#ifdef DOCK_DEBUG
-					printf("%-25s", "\tK_LS_SOLISWETS");fflush(stdout);
-				#endif
-				//runKernel1D(command_queue,kernel3,kernel3_gxsize,kernel3_lxsize,&time_start_kernel,&time_end_kernel);
-                gpu_perform_LS(kernel3_gxsize, kernel3_lxsize, pMem_conformations_next, pMem_energies_next);                
-				#ifdef DOCK_DEBUG
-					printf("%15s" ," ... Finished\n");fflush(stdout);
-				#endif
-				// End of Kernel3
-			}
-		} // End if (dockpars.lsearch_rate != 0.0f)
-		// -------- Replacing with memory maps! ------------
-		// -------- Replacing with memory maps! ------------
-		// Kernel2
-		#ifdef DOCK_DEBUG
-			printf("%-25s", "\tK_EVAL");fflush(stdout);
-		#endif
-		//runKernel1D(command_queue,kernel2,kernel2_gxsize,kernel2_lxsize,&time_start_kernel,&time_end_kernel);
-        gpu_sum_evals(kernel2_gxsize, kernel2_lxsize);       
-        
-		#ifdef DOCK_DEBUG
-			printf("%15s" ," ... Finished\n");fflush(stdout);
-		#endif
-		// End of Kernel2
-		// ===============================================================================
-		// -------- Replacing with memory maps! ------------
-#if defined (MAPPED_COPY)
-		//map_cpu_evals_of_runs = (int*) memMap(command_queue, mem_gpu_evals_of_runs, CL_MAP_READ, size_evals_of_runs);
-#else
-		hipMemcpy(sim_state.cpu_evals_of_runs.data(), pMem_gpu_evals_of_runs, size_evals_of_runs, hipMemcpyDeviceToHost);
-#endif
-		// -------- Replacing with memory maps! ------------
-		generation_cnt++;
-		// ----------------------------------------------------------------------
-		// ORIGINAL APPROACH: switching conformation and energy pointers (Probably the best approach, restored)
-		// CURRENT APPROACH:  copy data from one buffer to another, pointers are kept the same
-		// IMPROVED CURRENT APPROACH
-		// Kernel arguments are changed on every iteration
-		// No copy from dev glob memory to dev glob memory occurs
-		// Use generation_cnt as it evolves with the main loop
-		// No need to use tempfloat
-		// No performance improvement wrt to "CURRENT APPROACH"
+			// Kernel4
+			#ifdef DOCK_DEBUG
+				printf("%-25s", "\tK_GA_GENERATION");fflush(stdout);
+			#endif
+			
+			//runKernel1D(command_queue,kernel4,kernel4_gxsize,kernel4_lxsize,&time_start_kernel,&time_end_kernel);
+			gpu_gen_and_eval_newpops(kernel4_gxsize, kernel4_lxsize, pMem_conformations_current, pMem_energies_current, pMem_conformations_next, pMem_energies_next);
+			#ifdef DOCK_DEBUG
+				printf("%15s", " ... Finished\n");fflush(stdout);
+			#endif
+			// End of Kernel4
+			if (cData.dockpars.lsearch_rate != 0.0f) {
+				if (strcmp(mypars->ls_method, "sw")  == 0 ) {
+					// Kernel3
+					#ifdef DOCK_DEBUG
+						printf("%-25s", "\tK_LS_SOLISWETS");fflush(stdout);
+					#endif
+					//runKernel1D(command_queue,kernel3,kernel3_gxsize,kernel3_lxsize,&time_start_kernel,&time_end_kernel);
+					gpu_perform_LS(kernel3_gxsize, kernel3_lxsize, pMem_conformations_next, pMem_energies_next);                
+					#ifdef DOCK_DEBUG
+						printf("%15s" ," ... Finished\n");fflush(stdout);
+					#endif
+					// End of Kernel3
+				}
+			} // End if (dockpars.lsearch_rate != 0.0f)
+			// -------- Replacing with memory maps! ------------
+			// -------- Replacing with memory maps! ------------
+			// Kernel2
+			#ifdef DOCK_DEBUG
+				printf("%-25s", "\tK_EVAL");fflush(stdout);
+			#endif
+			//runKernel1D(command_queue,kernel2,kernel2_gxsize,kernel2_lxsize,&time_start_kernel,&time_end_kernel);
+			gpu_sum_evals(kernel2_gxsize, kernel2_lxsize);       
+			
+			#ifdef DOCK_DEBUG
+				printf("%15s" ," ... Finished\n");fflush(stdout);
+			#endif
+			// End of Kernel2
+			// ===============================================================================
+			// -------- Replacing with memory maps! ------------
+	#if defined (MAPPED_COPY)
+			//map_cpu_evals_of_runs = (int*) memMap(command_queue, mem_gpu_evals_of_runs, CL_MAP_READ, size_evals_of_runs);
+	#else
+			hipMemcpy(sim_state.cpu_evals_of_runs.data(), pMem_gpu_evals_of_runs, size_evals_of_runs, hipMemcpyDeviceToHost);
+	#endif
+			// -------- Replacing with memory maps! ------------
+			generation_cnt++;
+			// ----------------------------------------------------------------------
+			// ORIGINAL APPROACH: switching conformation and energy pointers (Probably the best approach, restored)
+			// CURRENT APPROACH:  copy data from one buffer to another, pointers are kept the same
+			// IMPROVED CURRENT APPROACH
+			// Kernel arguments are changed on every iteration
+			// No copy from dev glob memory to dev glob memory occurs
+			// Use generation_cnt as it evolves with the main loop
+			// No need to use tempfloat
+			// No performance improvement wrt to "CURRENT APPROACH"
 
-		// Kernel args exchange regions they point to
-		// But never two args point to the same region of dev memory
-		// NO ALIASING -> use restrict in Kernel
-        
-        // Flip conformation and energy pointers
-        float* pTemp;
-        pTemp = pMem_conformations_current;
-        pMem_conformations_current = pMem_conformations_next;
-        pMem_conformations_next = pTemp;
-        pTemp = pMem_energies_current;
-        pMem_energies_current = pMem_energies_next;
-        pMem_energies_next = pTemp;
-               
-		// ----------------------------------------------------------------------
-		#ifdef DOCK_DEBUG
-			printf("\tProgress %.3f %%\n", progress);
-			fflush(stdout);
-		#endif
-	} // End of while-loop
+			// Kernel args exchange regions they point to
+			// But never two args point to the same region of dev memory
+			// NO ALIASING -> use restrict in Kernel
+			
+			// Flip conformation and energy pointers
+			float* pTemp;
+			pTemp = pMem_conformations_current;
+			pMem_conformations_current = pMem_conformations_next;
+			pMem_conformations_next = pTemp;
+			pTemp = pMem_energies_current;
+			pMem_energies_current = pMem_energies_next;
+			pMem_energies_next = pTemp;
+				
+			// ----------------------------------------------------------------------
+			#ifdef DOCK_DEBUG
+				printf("\tProgress %.3f %%\n", progress);
+				fflush(stdout);
+			#endif
+		} // End of while-loop
+	}
+	std::cout << "E\n";
 
     auto const t3 = std::chrono::steady_clock::now();
     printf("\nDocking time %fs\n", elapsed_seconds(t2, t3));
