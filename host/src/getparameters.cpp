@@ -94,7 +94,7 @@ int get_filenames_and_ADcoeffs(const int* argc,
 	//ffile_given = 1;
 	lfile_given = 0;
 
-	strcpy(mypars->fldfile, "./input/7cpa/7cpa_protein.maps.fld");
+	
 	//strcpy(mypars->fldfile, "./input/3er5/protein.maps.fld");
 	//strcpy(mypars->fldfile, "./input/nsc1620/protein.maps.fld");
 
@@ -113,7 +113,13 @@ int get_filenames_and_ADcoeffs(const int* argc,
 			lfile_given = 1;
 			strcpy(mypars->ligandfile, argv[i+1]);
 		}
-
+		if (strcmp("-fldfile", argv[i]) == 0)
+		{
+			lfile_given = 1;
+			// strcpy(mypars->fldfile, "./input/7cpa/7cpa_protein.maps.fld");
+			strcpy(mypars->fldfile, argv[i+1]);
+		}
+		
 		//Argument: unbound model to be used.
 		//0 means the bound, 1 means the extended, 2 means the compact ...
 		//model's free energy coefficients will be used during docking.
@@ -177,7 +183,7 @@ void get_commandpars(const int* argc,
 //	mypars->use_heuristics		= false;	// Flag if we want to use Diogo's heuristics
 //	mypars->heuristics_max		= 50000000;	// Maximum number of evaluations under the heuristics (50M evaluates to 80% at 12.5M evals calculated by heuristics)
 	mypars->abs_max_dmov		= 6.0/(*spacing); 	// +/-6A
-	mypars->abs_max_dang		= 90; 		// +/- 90°
+	mypars->abs_max_dang		= 90; 		// +/- 90ï¿½
 	mypars->mutation_rate		= 2; 		// 2%
 	mypars->crossover_rate		= 80;		// 80%
 	mypars->lsearch_rate		= 80;		// 80%
@@ -193,7 +199,7 @@ void get_commandpars(const int* argc,
 	mypars->tournament_rate		= 60;		// 60%
 	mypars->rho_lower_bound		= 0.01;		// 0.01
 	mypars->base_dmov_mul_sqrt3	= 2.0/(*spacing)*sqrt(3.0);	// 2 A
-	mypars->base_dang_mul_sqrt3	= 75.0*sqrt(3.0);		// 75°
+	mypars->base_dang_mul_sqrt3	= 75.0*sqrt(3.0);		// 75ï¿½
 	mypars->cons_limit		= 4;		// 4
 	mypars->max_num_of_iters	= 300;
 	mypars->pop_size		= 150;
