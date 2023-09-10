@@ -721,10 +721,11 @@ filled with clock() */
 	unsigned long total_evals;
 
 	auto const t2 = std::chrono::steady_clock::now();
-	printf("\nRest of Setup time %fs\n", elapsed_seconds(t1 ,t2));
+	// printf("\nRest of Setup time %fs\n", elapsed_seconds(t1 ,t2));
 
 	//print progress bar
 	AutoStop autostop(mypars->pop_size, mypars->num_of_runs, mypars->stopstd, mypars->as_frequency);
+/*
 #ifndef DOCK_DEBUG
         if (mypars->autostop)
         {
@@ -737,6 +738,7 @@ filled with clock() */
 		printf("---------+---------+---------+---------+---------+\n");
 	}
 #endif
+*/
 	curr_progress_cnt = 0;
 	zmq::context_t m_ctx(1);
   	zmq::socket_t* m_socket_ptr;
@@ -753,8 +755,10 @@ filled with clock() */
       //  Always poll for worker activity 
       { *m_socket_ptr, 0, ZMQ_POLLIN, 0 }
     };
-	bool paused = true;
+	bool paused = false;
 	bool stopped = false;
+	auto start_ = std::chrono::system_clock::now();
+	auto end_ = std::chrono::system_clock::now();
 	while(true){
 		zmq::poll(&items[0], 1, timeout);
 		if (items[0].revents & ZMQ_POLLIN) {
@@ -783,12 +787,19 @@ filled with clock() */
 		if(stopped){
 			break;
 		}
+		uint64_t prev = 0UL;
 		while (!paused)
 		{
 		//(progress = check_progress(tData.pMem_gpu_evals_of_runs, generation_cnt, mypars->num_of_energy_evals, mypars->num_of_generations, mypars->num_of_runs, total_evals)) < 100.0)
 		// -------- Replacing with memory maps! ------------
-		
-			std::cout << "gen count: " << generation_cnt << std::endl << std::flush;
+
+			//std::cout << "gen count1: " << generation_cnt << std::endl << std::flush;
+			//std::cout << "gen count2: " << mypars->num_of_runs << std::endl << std::flush;
+			auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end_ - start_).count();
+			//std::cout << "gen count3: " << (tData.pMem_gpu_evals_of_runs[1] - prev) /  std::max(1000L, elapsed) << std::endl << std::flush;
+			std::cout << elapsed << std::endl << std::flush;
+			start_ = std::chrono::system_clock::now();
+			prev = tData.pMem_gpu_evals_of_runs[0];
 			if (mypars->autostop) {
 							if (generation_cnt % mypars->as_frequency == 0) {
 							status = hipMemcpy(sim_state.cpu_energies.data(), pMem_energies_current, size_energies, hipMemcpyDeviceToHost);
@@ -891,6 +902,7 @@ filled with clock() */
 				printf("\tProgress %.3f %%\n", progress);
 				fflush(stdout);
 			#endif
+			end_ = std::chrono::system_clock::now();
 		} // End of while-loop
 	}
 	std::cout << "E\n";
@@ -961,10 +973,12 @@ double check_progress(int* evals_of_runs, int generation_cnt, int max_num_of_eva
 	int i;
 
 	runs_finished = 0;
-	for (i=0; i<num_of_runs; i++)
+	for (i=0; i<num_of_runs; i++){
+		std::cout << evals_of_runs[i] << ", " ;
 		if (evals_of_runs[i] >= max_num_of_evals)
 			runs_finished++;
-
+	}
+	std::cout << std::endl << std::flush;
 	if ((runs_finished >= num_of_runs) || (generation_cnt >= max_num_of_gens))
 		return 1;
 	else
