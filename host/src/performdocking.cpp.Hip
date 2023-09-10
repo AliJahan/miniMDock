@@ -790,7 +790,7 @@ filled with clock() */
 		uint64_t prev = 0UL;
 		while (!paused)
 		{
-		//(progress = check_progress(tData.pMem_gpu_evals_of_runs, generation_cnt, mypars->num_of_energy_evals, mypars->num_of_generations, mypars->num_of_runs, total_evals)) < 100.0)
+		(progress = check_progress(tData.pMem_gpu_evals_of_runs, generation_cnt, mypars->num_of_energy_evals, mypars->num_of_generations, mypars->num_of_runs, total_evals)) < 100.0)
 		// -------- Replacing with memory maps! ------------
 
 			//std::cout << "gen count1: " << generation_cnt << std::endl << std::flush;
