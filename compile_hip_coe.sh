@@ -1,9 +1,9 @@
 #!/bin/bash
 
- ROCMV=5.2.0
- CARD=hcc
+ ROCMV=5.7.1
+ CARD=amd
 
- module load rocm/${ROCMV} cuda10.2/toolkit
+ module load /opt/rocm-${ROCMV}/lib/rocmmod cuda10.2/toolkit
  export HIP_PLATFORM=${CARD}
  #export HCC_HOME=/opt/rocm-3.3.0/hcc
 
